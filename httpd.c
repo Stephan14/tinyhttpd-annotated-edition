@@ -16,7 +16,6 @@
 /*
     代码中除了用到 C 语言标准库的一些函数，也用到了一些与环境有关的函数(例如POSIX标准)
     具体可以参读《The Linux Programming Interface》，以下简称《TLPI》，页码指示均为英文版
-
   */
 #include <stdio.h>
 #include <sys/socket.h>
@@ -63,12 +62,11 @@ void accept_request( int client )
   char path[512];
   size_t i = 0, j = 0;
   struct stat st;   /* 描述一个linux系统文件系统中的文件属性的结构*/
-  int cgi = 0;      /* becomes true if server decides this is a CGI program */
+  int cgi = 0;      /* 根据cgi决定是否运行CGI脚本 */
   char *query_string = NULL;
 
   /*读http 请求的第一行数据（request line），把请求方法存进method 中*/
   numchars = get_line( client, buf, sizeof( buf ) );
-
   while( !ISspace( buf[ j ] ) && ( i < sizeof( method ) - 1 ) )
     method[ i++ ] = buf[ j++ ];
   method[i] = '\0';
@@ -129,7 +127,6 @@ void accept_request( int client )
   /*
     在系统上去查询该文件是否存在
     如果不存在，那把这次http的请求后续的内容(head和body)全部读完并忽略
-    read & discard headers
   */
   if ( stat( path, &st ) == -1 )
   /*
@@ -172,20 +169,20 @@ void accept_request( int client )
 /* Inform the client that a request it has made has a problem.
  * Parameters: client socket */
 /**********************************************************************/
-void bad_request(int client)
+void bad_request( int client )
 {
- char buf[1024];
+  char buf[1024];
 
- sprintf(buf, "HTTP/1.0 400 BAD REQUEST\r\n");
- send(client, buf, sizeof(buf), 0);
- sprintf(buf, "Content-type: text/html\r\n");
- send(client, buf, sizeof(buf), 0);
- sprintf(buf, "\r\n");
- send(client, buf, sizeof(buf), 0);
- sprintf(buf, "<P>Your browser sent a bad request, ");
- send(client, buf, sizeof(buf), 0);
- sprintf(buf, "such as a POST without a Content-Length.\r\n");
- send(client, buf, sizeof(buf), 0);
+  sprintf( buf, "HTTP/1.0 400 BAD REQUEST\r\n" );
+  send( client, buf, sizeof( buf ), 0 );
+  sprintf( buf, "Content-type: text/html\r\n" );
+  send( client, buf, sizeof( buf ), 0 );
+  sprintf( buf, "\r\n" );
+  send( client, buf, sizeof( buf ), 0 );
+  sprintf( buf, "<P>Your browser sent a bad request, " );
+  send( client, buf, sizeof( buf ), 0 );
+  sprintf( buf, "such as a POST without a Content-Length.\r\n" );
+  send( client, buf, sizeof( buf ), 0 );
 }
 
 /**********************************************************************/
@@ -243,123 +240,137 @@ void error_die(const char *sc)
  * Parameters: client socket descriptor
  *             path to the CGI script */
 /**********************************************************************/
-void execute_cgi(int client, const char *path, const char *method, const char *query_string)
+void execute_cgi( int client, const char *path, const char *method, const char *query_string )
 {
- char buf[1024];
- int cgi_output[2];
- int cgi_input[2];
- pid_t pid;
- int status;
- int i;
- char c;
- int numchars = 1;
- int content_length = -1;
+  char buf[1024];
+  int cgi_output[2], cgi_input[2], i, status;
+  pid_t pid;
+  char c;
+  int numchars = 1;
+  int content_length = -1;
 
- //往 buf 中填东西以保证能进入下面的 while
- buf[0] = 'A'; buf[1] = '\0';
- //如果是 http 请求是 GET 方法的话读取并忽略请求剩下的内容
- if (strcasecmp(method, "GET") == 0)
-  while ((numchars > 0) && strcmp("\n", buf))  /* read & discard headers */
-   numchars = get_line(client, buf, sizeof(buf));
- else    /* POST */
- {
-  //只有 POST 方法才继续读内容
-  numchars = get_line(client, buf, sizeof(buf));
-  //这个循环的目的是读出指示 body 长度大小的参数，并记录 body 的长度大小。其余的 header 里面的参数一律忽略
-  //注意这里只读完 header 的内容，body 的内容没有读
-  while ((numchars > 0) && strcmp("\n", buf))
+  /*往buf中填东西以保证能进入下面的while*/
+  buf[0] = 'A'; buf[1] = '\0';
+  /*如果是http请求是GET方法的话读取并忽略请求剩下的内容*/
+  if( strcasecmp( method, "GET" ) == 0 )
+    while( ( numchars > 0 ) && strcmp( "\n", buf ) )
+      numchars = get_line( client, buf, sizeof( buf ) );
+  else    /* POST */
   {
-   buf[15] = '\0';
-   if (strcasecmp(buf, "Content-Length:") == 0)
-    content_length = atoi(&(buf[16])); //记录 body 的长度大小
-   numchars = get_line(client, buf, sizeof(buf));
+    /*只有 POST 方法才继续读内容*/
+    numchars = get_line(client, buf, sizeof(buf));
+    /*
+      这个循环的目的是读出指示body长度大小的参数，并记录body的长度大小。
+      其余的 header 里面的参数一律忽略,注意这里只读完 header 的内容，
+      body 的内容没有读
+    */
+    while( ( numchars > 0 ) && strcmp( "\n", buf ) )
+    {
+      buf[ 15 ] = '\0';
+      if( strcasecmp( buf, "Content-Length:" ) == 0 )
+        content_length = atoi( &( buf[ 16 ] ) );/*atoi参数为指针*/
+      numchars = get_line( client, buf, sizeof( buf ) );
+    }
+
+    /*如果http请求的 header 没有指示 body 长度大小的参数，则报错返回*/
+    if( content_length == -1 )
+    {
+      bad_request( client );
+      return;
+    }
   }
 
-  //如果 http 请求的 header 没有指示 body 长度大小的参数，则报错返回
-  if (content_length == -1) {
-   bad_request(client);
-   return;
+  sprintf( buf, "HTTP/1.0 200 OK\r\n" );
+  send( client, buf, strlen( buf ), 0 );
+
+  /*下面这里创建两个管道，用于两个进程间通信*/
+  if( pipe( cgi_output ) < 0 )
+  {
+    cannot_execute( client );
+    return;
   }
- }
-
- sprintf(buf, "HTTP/1.0 200 OK\r\n");
- send(client, buf, strlen(buf), 0);
-
- //下面这里创建两个管道，用于两个进程间通信
- if (pipe(cgi_output) < 0) {
-  cannot_execute(client);
-  return;
- }
- if (pipe(cgi_input) < 0) {
-  cannot_execute(client);
-  return;
- }
-
- //创建一个子进程
- if ( (pid = fork()) < 0 ) {
-  cannot_execute(client);
-  return;
- }
-
- //子进程用来执行 cgi 脚本
- if (pid == 0)  /* child: CGI script */
- {
-  char meth_env[255];
-  char query_env[255];
-  char length_env[255];
-
-  //dup2()包含<unistd.h>中，参读《TLPI》P97
-  //将子进程的输出由标准输出重定向到 cgi_ouput 的管道写端上
-  dup2(cgi_output[1], 1);
-  //将子进程的输出由标准输入重定向到 cgi_ouput 的管道读端上
-  dup2(cgi_input[0], 0);
-  //关闭 cgi_ouput 管道的读端与cgi_input 管道的写端
-  close(cgi_output[0]);
-  close(cgi_input[1]);
-
-  //构造一个环境变量
-  sprintf(meth_env, "REQUEST_METHOD=%s", method);
-  //putenv()包含于<stdlib.h>中，参读《TLPI》P128
-  //将这个环境变量加进子进程的运行环境中
-  putenv(meth_env);
-
-  //根据http 请求的不同方法，构造并存储不同的环境变量
-  if (strcasecmp(method, "GET") == 0) {
-   sprintf(query_env, "QUERY_STRING=%s", query_string);
-   putenv(query_env);
-  }
-  else {   /* POST */
-   sprintf(length_env, "CONTENT_LENGTH=%d", content_length);
-   putenv(length_env);
+  if( pipe( cgi_input ) < 0 )
+  {
+    cannot_execute( client );
+    return;
   }
 
-  //execl()包含于<unistd.h>中，参读《TLPI》P567
-  //最后将子进程替换成另一个进程并执行 cgi 脚本
-  execl(path, path, NULL);
-  exit(0);
+  /*创建一个子进程*/
+  if( ( pid = fork() ) < 0 )
+  {
+    cannot_execute( client );
+    return;
+  }
 
- } else {    /* parent */
-  //父进程则关闭了 cgi_output管道的写端和 cgi_input 管道的读端
-  close(cgi_output[1]);
-  close(cgi_input[0]);
+  /*子进程用来执行cgi脚本*/
+  if( pid == 0 )
+  {
+    char meth_env[ 255 ];
+    char query_env[ 255 ];
+    char length_env[ 255 ];
 
-  //如果是 POST 方法的话就继续读 body 的内容，并写到 cgi_input 管道里让子进程去读
-  if (strcasecmp(method, "POST") == 0)
-   for (i = 0; i < content_length; i++) {
-    recv(client, &c, 1, 0);
-    write(cgi_input[1], &c, 1);
-   }
+    /*
+      dup2()包含<unistd.h>中，参读《TLPI》P97
+      将子进程的输出由标准输出重定向到cgi_ouput的管道写端上
+    */
+    dup2( cgi_output[ 1 ], 1 );
+    /*将子进程的输出由标准输入重定向到cgi_ouput的管道读端上*/
+    dup2( cgi_input[ 0 ], 0 );
+    /*关闭 cgi_ouput管道的读端与cgi_input管道的写端*/
+    close( cgi_output[ 0 ] );
+    close( cgi_input[ 1 ] );
 
-  //然后从 cgi_output 管道中读子进程的输出，并发送到客户端去
-  while (read(cgi_output[0], &c, 1) > 0)
-   send(client, &c, 1, 0);
+    /*构造一个环境变量*/
+    sprintf( meth_env, "REQUEST_METHOD=%s", method) ;
+    /*putenv()包含于<stdlib.h>中，参读《TLPI》P128,将这个环境变量加进子进程的运行环境中*/
+    putenv( meth_env );
 
-  //关闭管道
-  close(cgi_output[0]);
-  close(cgi_input[1]);
-  //等待子进程的退出
-  waitpid(pid, &status, 0);
- }
+    /*根据http 请求的不同方法，构造并存储不同的环境变量*/
+    if( strcasecmp( method, "GET" ) == 0 )
+    /*GET方法*/
+    {
+      sprintf( query_env, "QUERY_STRING=%s", query_string );
+      putenv( query_env );
+    }
+    else
+    /*POST方法*/
+    {
+      sprintf( length_env, "CONTENT_LENGTH=%d", content_length );
+      putenv( length_env );
+    }
+
+    /*
+      execl()包含于<unistd.h>中，参读《TLPI》P567,最后将子进程替换成另一个进程并执行
+      cgi脚本,前后的进程ID并未改变。exec只是用另一个新程序替换了当前进程的正文、数据、堆
+     和栈段
+    */
+    execl( path, path, NULL );
+    exit(0);
+  }
+  else
+  {
+    /*父进程则关闭了 cgi_output管道的写端和 cgi_input 管道的读端*/
+    close( cgi_output[ 1 ] );
+    close( cgi_input[ 0 ] );
+
+    /*如果是 POST 方法的话就继续读 body 的内容，并写到cgi_input管道里让子进程去读*/
+    if( strcasecmp( method, "POST" ) == 0 )
+      for( i = 0; i < content_length; i++ )
+      {
+        recv( client, &c, 1, 0 );
+        write( cgi_input[1], &c, 1 );
+      }
+
+    /*然后从cgi_output管道中读子进程的输出，并发送到客户端去*/
+    while( read( cgi_output[0], &c, 1 ) > 0 )
+      send( client, &c, 1, 0 );
+
+    /*关闭管道*/
+    close( cgi_output[ 0 ] );
+    close( cgi_input[ 1 ] );
+    /*等待子进程的退出*/
+    waitpid( pid, &status, 0 );
+  }
 }
 
 /**********************************************************************/
@@ -392,8 +403,10 @@ int get_line( int sock, char *buf, int size )
       if ( c == '\r' )
       {
         n = recv( sock, &c, 1, MSG_PEEK );
-        /*MSG_PEEK表示读取数据包的时候，不会把该数据包从缓存队列中删除,下次读取时还是这个数据包*/
-        /* DEBUG printf("%02X\n", c); */
+        /*
+          MSG_PEEK表示读取数据包的时候，不会把该数据包从缓存队列中删除,
+          下次读取时还是这个数据包
+        */
         if ( ( n > 0 ) && ( c == '\n' ) )
           recv( sock, &c, 1, 0 );
         else
@@ -417,7 +430,7 @@ int get_line( int sock, char *buf, int size )
 void headers( int client, const char *filename )
 {
   char buf[1024];
-  (void)filename;  /* could use filename to determine file type */
+  (void)filename;
 
   strcpy( buf, "HTTP/1.0 200 OK\r\n" );
   send( client, buf, strlen( buf ), 0 );
@@ -542,9 +555,9 @@ int startup( u_short *port )
       getsockname()包含于<sys/socker.h>中，参读《TLPI》P1263
       调用getsockname()获取系统给httpd这个socket随机分配的端口号
     */
-    if ( getsockname( httpd, (struct sockaddr *)&name, &namelen ) == -1 )
+    if ( getsockname( httpd, ( struct sockaddr * )&name, &namelen ) == -1 )
       error_die( "getsockname" );
-    *port = ntohs(name.sin_port);
+    *port = ntohs( name.sin_port );
   }
 
   /*最初的 BSD socket 实现中，backlog 的上限是5.参读《TLPI》P1156*/
@@ -600,11 +613,11 @@ int main(void)
     /*阻塞等待客户端的连接，参读《TLPI》P1157*/
     client_sock = accept( server_sock, ( struct sockaddr * )&client_name, &client_name_len );
     if ( client_sock == -1 )
-      error_die("accept");
+      error_die( "accept" );
     /*accept_request( client_sock );*/
     if( pthread_create( &newthread , NULL, accept_request, client_sock ) != 0 )
-      perror("pthread_create");
+      perror( "pthread_create" );
     }
-  close(server_sock);
+  close( server_sock );
   return(0);
 }
